@@ -8,14 +8,15 @@ namespace PostService.Models
         public int Id { get; set; }
 
         [Required]
-        public int UserId { get; set; }  // Could come from Auth Service
+        [MaxLength(36)] // UUID length
+        public string UserId { get; set; } = string.Empty;  // Keycloak sub claim (UUID)
 
         [Required]
         [MaxLength(2200)]
-        public string Caption { get; set; }
+        public string Caption { get; set; } = string.Empty;
 
         public string? ImageUrl { get; set; }
 
-        public DateTime? CreatedAt { get; set; } = DateTime.UtcNow;
+        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     }
 }
