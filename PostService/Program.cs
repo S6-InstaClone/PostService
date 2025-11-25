@@ -1,6 +1,8 @@
 using Azure.Storage.Blobs;
+using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using PostService.Business;
+using PostService.Consumers;
 using PostService.Data;
 using PostService.Persistence;
 
@@ -33,8 +35,34 @@ namespace PostService
             builder.Services.AddSwaggerGen();
             builder.Services.AddScoped<BlobService>();
             builder.Services.AddScoped<PostsService>();
-            var app = builder.Build();
 
+            builder.Services.AddMassTransit(x =>
+            {
+                x.AddConsumer<AccountDeletedConsumer>();
+
+                x.UsingRabbitMq((context, cfg) =>
+                {
+                    cfg.Host("rabbitmq", "/", h =>
+                    {
+                        h.Username("admin");
+                        h.Password("admin");
+                    });
+
+                    cfg.ReceiveEndpoint("account-deleted-queue", e =>
+                    {
+                        e.ConfigureConsumer<AccountDeletedConsumer>(context);
+                    });
+                });
+            });
+
+            var app = builder.Build();
+            using (var scope = app.Services.CreateScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<PostRepository>();
+                db.Database.Migrate(); // Auto-applies pending migrations
+            }
+
+           
             // Configure the HTTP request pipeline.
             if (app.Environment.IsDevelopment())
             {
