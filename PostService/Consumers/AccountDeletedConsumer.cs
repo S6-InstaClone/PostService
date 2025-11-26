@@ -31,5 +31,5 @@ namespace PostService.Consumers
         }
     }
 
-    public record AccountDeletedEvent(int UserId, string Username, DateTime DeletedAt);
+    public record AccountDeletedEvent(string UserId, string Username, DateTime DeletedAt);
 }
