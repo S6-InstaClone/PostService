@@ -1,4 +1,4 @@
-﻿namespace PostService.Messages
+﻿namespace AccountService.Messages
 {
     /// <summary>
     /// Event received when a user account is deleted (GDPR compliance)

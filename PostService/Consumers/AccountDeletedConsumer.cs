@@ -1,7 +1,7 @@
 ﻿using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using PostService.Data;
-using PostService.Messages;
+using AccountService.Messages;
 using Azure.Storage.Blobs;
 
 namespace PostService.Consumers
