@@ -1,6 +1,8 @@
 using Azure.Storage.Blobs;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
 using PostService.Business;
 using PostService.Consumers;
 using PostService.Data;
@@ -36,6 +38,17 @@ namespace PostService
             builder.Services.AddScoped<BlobService>();
             builder.Services.AddScoped<PostsService>();
 
+            builder.Services.AddOpenTelemetry()
+                .ConfigureResource(resource => resource
+                    .AddService(serviceName: "PostService"))
+            .WithMetrics(metrics =>
+            {
+                metrics
+                    .AddAspNetCoreInstrumentation()
+                    .AddHttpClientInstrumentation()
+                    .AddPrometheusExporter();
+            });
+
             builder.Services.AddMassTransit(x =>
             {
                 x.AddConsumer<AccountDeletedConsumer>();
@@ -62,7 +75,7 @@ namespace PostService
                 db.Database.Migrate(); // Auto-applies pending migrations
             }
 
-           
+
             // Configure the HTTP request pipeline.
             if (app.Environment.IsDevelopment())
             {
@@ -70,6 +83,7 @@ namespace PostService
                 app.UseSwaggerUI();
             }
 
+            app.UseOpenTelemetryPrometheusScrapingEndpoint();
             app.UseHttpsRedirection();
             app.UseCors("AllowReactApp");
             app.UseAuthorization();
