@@ -1,0 +1,63 @@
+# .gitleaks.toml - Custom secret detection rules for InstaClone
+title = "InstaClone Gitleaks Configuration"
+
+[allowlist]
+description = "Global allowlist"
+paths = [
+    '''(^|/)\.git/''',
+    '''(^|/)node_modules/''',
+    '''(^|/)\.vs/''',
+    '''(^|/)bin/''',
+    '''(^|/)obj/''',
+]
+
+# Detect hardcoded connection strings
+[[rules]]
+id = "connection-string"
+description = "Hardcoded database connection string"
+regex = '''(ConnectionString|DefaultConnection)["']?\s*[:=]\s*["'][^"']*Password=[^"']+["']'''
+tags = ["database", "credentials"]
+
+# Detect Azure Storage keys
+[[rules]]
+id = "azure-storage-key"
+description = "Azure Storage Account Key"
+regex = '''AccountKey\s*=\s*[A-Za-z0-9+/=]{40,}'''
+tags = ["azure", "storage", "key"]
+
+# Detect RabbitMQ credentials in code
+[[rules]]
+id = "rabbitmq-password"
+description = "RabbitMQ password in code"
+regex = '''h\.Password\s*\(\s*["'][^"']+["']\s*\)'''
+tags = ["rabbitmq", "credentials"]
+
+# Detect Keycloak admin credentials
+[[rules]]
+id = "keycloak-admin"
+description = "Keycloak admin credentials"
+regex = '''(AdminPassword|KEYCLOAK_ADMIN_PASSWORD)\s*[:=]\s*["'][^"']+["']'''
+tags = ["keycloak", "credentials"]
+
+# Detect generic API keys
+[[rules]]
+id = "generic-api-key"
+description = "Generic API key pattern"
+regex = '''(?i)(api[_-]?key|apikey|api_secret)\s*[:=]\s*["'][a-zA-Z0-9_\-]{20,}["']'''
+tags = ["api", "key"]
+
+# Detect JWT secrets
+[[rules]]
+id = "jwt-secret"
+description = "JWT Secret key"
+regex = '''(?i)(jwt[_-]?secret|token[_-]?secret)\s*[:=]\s*["'][^"']{10,}["']'''
+tags = ["jwt", "secret"]
+
+# Allowlist for development/test files (use with caution)
+[allowlist.commits]
+# Add specific commit hashes to ignore if needed
+
+[allowlist.regexes]
+# Allow Azurite development storage key (well-known test key)
+# Note: This is the standard Azurite development key, safe to commit
+Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq = "Azurite development key"

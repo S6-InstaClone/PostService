@@ -15,7 +15,36 @@
 
 # Mono auto generated files
 mono_crash.*
+.env
+.env.local
+.env.*.local
+*.env
 
+# But DO commit the example files
+!.env.example
+!.env.template
+
+# Local development overrides
+docker-compose.override.yml
+docker-compose.local.yml
+
+# Secret files
+secrets/
+*.secret
+*.secrets
+*_secret.json
+*_secrets.json
+
+# Certificate files
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# Azure credentials
+azure.json
+azureauth.json
 # Build results
 [Dd]ebug/
 [Dd]ebugPublic/

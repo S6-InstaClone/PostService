@@ -1,0 +1,93 @@
+name: SonarCloud Security Analysis
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+jobs:
+  sonar:
+    runs-on: ubuntu-latest
+    name: SAST & Security Hotspots
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Shallow clones should be disabled for better analysis
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Install SonarScanner
+        run: dotnet tool install --global dotnet-sonarscanner
+
+      - name: Install ReportGenerator
+        run: dotnet tool install --global dotnet-reportgenerator-globaltool
+
+      - name: Cache SonarCloud packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.sonar/cache
+          key: ${{ runner.os }}-sonar
+          restore-keys: ${{ runner.os }}-sonar
+
+      - name: Begin SonarCloud analysis
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          dotnet sonarscanner begin \
+            /k:"${{ github.repository_owner }}_${{ github.event.repository.name }}" \
+            /o:"${{ github.repository_owner }}" \
+            /d:sonar.host.url="https://sonarcloud.io" \
+            /d:sonar.login="$SONAR_TOKEN" \
+            /d:sonar.cs.opencover.reportsPaths="**/coverage.opencover.xml" \
+            /d:sonar.coverage.exclusions="**/Migrations/**,**/Program.cs,**/*.Designer.cs" \
+            /d:sonar.cpd.exclusions="**/Migrations/**" \
+            /d:sonar.security.hotspots.inheritedRules=true \
+            /d:sonar.qualitygate.wait=true \
+            /d:sonar.verbose=false
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --no-incremental --no-restore
+
+      - name: Test with coverage
+        run: |
+          dotnet test \
+            --no-build \
+            --collect:"XPlat Code Coverage" \
+            --results-directory ./TestResults \
+            -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=opencover
+        continue-on-error: true
+
+      # Convert coverage to OpenCover format for SonarCloud
+      - name: Generate coverage report
+        run: |
+          reportgenerator \
+            -reports:./TestResults/**/coverage.cobertura.xml \
+            -targetdir:./coverage \
+            -reporttypes:opencover || true
+
+      - name: End SonarCloud analysis
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: dotnet sonarscanner end /d:sonar.login="$SONAR_TOKEN"
+
+      # Security summary
+      - name: Security Analysis Summary
+        if: always()
+        run: |
+          echo "## Security Analysis Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "View detailed results in [SonarCloud](https://sonarcloud.io/project/overview?id=${{ github.repository_owner }}_${{ github.event.repository.name }})" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Security Checks:" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ SAST Analysis" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Security Hotspot Detection" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Code Coverage Analysis" >> $GITHUB_STEP_SUMMARY

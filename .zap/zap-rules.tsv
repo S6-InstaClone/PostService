@@ -1,0 +1,64 @@
+# OWASP ZAP Baseline Scan Rules
+# Format: Rule ID	Action (WARN, FAIL, IGNORE)	Description
+
+# Informational alerts - WARN only
+10015	WARN	Incomplete or No Cache-control Header Set
+10020	WARN	X-Frame-Options Header
+10021	WARN	X-Content-Type-Options Header Missing
+10036	WARN	Server Leaks Version Information via "Server" HTTP Response Header Field
+10037	WARN	Server Leaks Information via "X-Powered-By" HTTP Response Header Field(s)
+10038	WARN	Content Security Policy (CSP) Header Not Set
+10039	WARN	X-Backend-Server Header Information Leak
+10049	WARN	Storable and Cacheable Content
+10055	WARN	CSP: Wildcard Directive
+10063	WARN	Permissions Policy Header Not Set
+10096	WARN	Timestamp Disclosure
+10098	WARN	Cross-Domain Misconfiguration
+10109	WARN	Modern Web Application
+10110	WARN	Dangerous JS Functions
+
+# Medium severity - WARN (review needed)
+10010	WARN	Cookie No HttpOnly Flag
+10011	WARN	Cookie Without Secure Flag
+10012	WARN	Password Autocomplete in Browser
+10017	WARN	Cross-Domain JavaScript Source File Inclusion
+10024	WARN	Information Disclosure - Sensitive Information in URL
+10027	WARN	Information Disclosure - Suspicious Comments
+10054	WARN	Cookie without SameSite Attribute
+10057	WARN	Username Hash Found
+10062	WARN	PII Disclosure
+
+# High severity - FAIL the scan
+10016	FAIL	Web Browser XSS Protection Not Enabled
+10019	FAIL	Content-Type Header Missing
+10035	FAIL	Strict-Transport-Security Header Not Set (HSTS)
+10040	FAIL	Secure Pages Include Mixed Content
+10105	FAIL	Weak Authentication Method
+20012	FAIL	Anti-CSRF Tokens Check
+40003	FAIL	Cross Site Scripting (Persistent)
+40012	FAIL	Cross Site Scripting (Reflected)
+40014	FAIL	Cross Site Scripting (Persistent) - Prime
+40016	FAIL	Cross Site Scripting (Persistent) - Spider
+40017	FAIL	Cross Site Scripting (Reflected) - Spider
+
+# Critical - Always FAIL
+90022	FAIL	Application Error Disclosure
+90023	FAIL	XML External Entity Attack
+90024	FAIL	Generic Padding Oracle
+90025	FAIL	Expression Language Injection
+90026	FAIL	SOAP Action Spoofing
+90028	FAIL	Insecure HTTP Method
+90033	FAIL	Loosely Scoped Cookie
+
+# SQL Injection - Always FAIL
+40018	FAIL	SQL Injection
+40019	FAIL	SQL Injection - MySQL
+40020	FAIL	SQL Injection - Hypersonic SQL
+40021	FAIL	SQL Injection - Oracle
+40022	FAIL	SQL Injection - PostgreSQL
+40024	FAIL	SQL Injection - SQLite
+
+# IGNORE - False positives or not applicable
+10050	IGNORE	Retrieved from Cache
+10052	IGNORE	X-ChromeLogger-Data Header
+10056	IGNORE	X-Debug-Token Header
