@@ -61,7 +61,7 @@ jobs:
         context: .
         push: false
         load: true
-        tags: $postservice:scan
+        tags: postservice:scan
 
     # Trivy container vulnerability scan
     - name: Run Trivy vulnerability scanner
