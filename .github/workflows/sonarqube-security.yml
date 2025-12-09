@@ -45,7 +45,7 @@ jobs:
             /d:sonar.host.url="https://sonarcloud.io" \
             /d:sonar.login="$SONAR_TOKEN" \
             /d:sonar.cs.opencover.reportsPaths="**/coverage.opencover.xml" \
-            /d:sonar.coverage.exclusions="**/Migrations/**,**/Program.cs,**/*.Designer.cs" \
+            /d:sonar.coverage.exclusions="**/Migrations/**,**/Program.cs,**/*.Designer.cs,**/*.Tests/**" \
             /d:sonar.cpd.exclusions="**/Migrations/**" \
             /d:sonar.security.hotspots.inheritedRules=true \
             /d:sonar.qualitygate.wait=true \
@@ -61,10 +61,9 @@ jobs:
         run: |
           dotnet test \
             --no-build \
-            --collect:"XPlat Code Coverage" \
+            --collect:"XPlat Code Coverage;Format=opencover" \
             --results-directory ./TestResults \
             -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=opencover
-        continue-on-error: true
 
       # Convert coverage to OpenCover format for SonarCloud
       - name: Generate coverage report
