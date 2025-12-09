@@ -41,6 +41,16 @@ namespace PostService.Controllers
         }
 
         /// <summary>
+        /// Gets the username from the X-User-Name header (set by API Gateway after JWT validation)
+        /// </summary>
+        private string? GetUsername()
+        {
+            var username = Request.Headers["X-User-Name"].FirstOrDefault();
+            _logger.LogDebug("X-User-Name header value: {Username}",  username);
+            return username;
+        }
+
+        /// <summary>
         /// Requires a valid user ID from the header, returns 401 if missing
         /// </summary>
         private string GetRequiredUserId()
@@ -113,7 +123,7 @@ namespace PostService.Controllers
             try
             {
                 var userId = GetRequiredUserId();
-
+                var username = GetUsername();
                 string? imageUrl = null;
 
                 if (dto.File != null && dto.File.Length > 0)
@@ -130,6 +140,7 @@ namespace PostService.Controllers
                 var post = new Post
                 {
                     UserId = userId,  // From gateway header, not from DTO
+                    Username = username,
                     Caption = dto.Caption,
                     ImageUrl = imageUrl,
                     CreatedAt = DateTime.UtcNow
@@ -138,7 +149,7 @@ namespace PostService.Controllers
                 _context.Posts.Add(post);
                 await _context.SaveChangesAsync();
 
-                _logger.LogInformation("Post {PostId} created by user {UserId}", post.Id, userId);
+                _logger.LogInformation("Post {PostId} created by user {UserId} ({Username})", post.Id, userId, username);
 
                 return CreatedAtAction(nameof(GetPost), new { id = post.Id }, post);
             }

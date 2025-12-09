@@ -11,6 +11,9 @@ namespace PostService.Models
         [MaxLength(36)] // UUID length
         public string UserId { get; set; } = string.Empty;  // Keycloak sub claim (UUID)
 
+        [MaxLength(150)]
+        public string? Username { get; set; }  // Keycloak preferred_username 
+
         [Required]
         [MaxLength(2200)]
         public string Caption { get; set; } = string.Empty;
