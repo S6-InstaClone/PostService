@@ -89,4 +89,4 @@ jobs:
           echo "### Security Checks:" >> $GITHUB_STEP_SUMMARY
           echo "- ✅ SAST Analysis" >> $GITHUB_STEP_SUMMARY
           echo "- ✅ Security Hotspot Detection" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Code Coverage Analysis" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Code Coverage Analysis" >> $GITHUB_STEP_SUMMARYs
