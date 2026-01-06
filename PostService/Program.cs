@@ -1,6 +1,7 @@
 using Azure.Storage.Blobs;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
+using OpenTelemetry.Instrumentation.Runtime;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using PostService.Business;
@@ -65,14 +66,23 @@ namespace PostService
             builder.Services.AddScoped<BlobService>();
             builder.Services.AddScoped<PostsService>();
 
+            // OpenTelemetry with comprehensive metrics
             builder.Services.AddOpenTelemetry()
                 .ConfigureResource(resource => resource
-                    .AddService(serviceName: "PostService"))
+                    .AddService(
+                        serviceName: "PostService",
+                        serviceVersion: "1.0.0",
+                        serviceInstanceId: Environment.MachineName))
                 .WithMetrics(metrics =>
                 {
                     metrics
+                        // ASP.NET Core metrics (requests, connections)
                         .AddAspNetCoreInstrumentation()
+                        // HttpClient metrics
                         .AddHttpClientInstrumentation()
+                        // .NET Runtime metrics (GC, Memory, ThreadPool)
+                        .AddRuntimeInstrumentation()
+                        // Prometheus exporter
                         .AddPrometheusExporter();
                 });
 
@@ -117,6 +127,7 @@ namespace PostService
                 app.UseSwaggerUI();
             }
 
+            // Prometheus metrics endpoint at /metrics
             app.UseOpenTelemetryPrometheusScrapingEndpoint();
 
             // Only use HTTPS redirection in production with proper certificates
