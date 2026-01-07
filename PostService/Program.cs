@@ -117,8 +117,19 @@ namespace PostService
             using (var scope = app.Services.CreateScope())
             {
                 var db = scope.ServiceProvider.GetRequiredService<PostRepository>();
-                db.Database.Migrate();
+
+                try
+                {
+                    db.Database.Migrate();
+                }
+                catch (Exception ex)
+                {
+                    // Log and rethrow so Kubernetes/Docker can restart the pod
+                    Console.Error.WriteLine($"Database migration failed: {ex}");
+                    throw;
+                }
             }
+
 
             // Configure the HTTP request pipeline.
             if (app.Environment.IsDevelopment())
