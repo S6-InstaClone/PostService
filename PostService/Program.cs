@@ -1,7 +1,6 @@
 using Azure.Storage.Blobs;
 using MassTransit;
 using Microsoft.EntityFrameworkCore;
-using OpenTelemetry.Instrumentation.Runtime;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using PostService.Business;
@@ -9,8 +8,8 @@ using PostService.Consumers;
 using PostService.Data;
 using PostService.Persistence;
 using Microsoft.Extensions.Caching.Hybrid;
-using Microsoft.Extensions.Caching.StackExchangeRedis;
 using StackExchange.Redis;
+
 namespace PostService
 {
     public class Program
@@ -47,7 +46,11 @@ namespace PostService
             builder.Services.AddDbContext<PostRepository>(options =>
                 options.UseNpgsql(connectionString));
 
+            // =============================================================================
+            // DISTRIBUTED CACHING - Redis + HybridCache
+            // =============================================================================
             var redisConnectionString = builder.Configuration.GetConnectionString("Redis")
+                ?? Environment.GetEnvironmentVariable("ConnectionStrings__Redis")
                 ?? "localhost:6379,abortConnect=false";
 
             // 1. Add Redis as distributed cache (L2)
@@ -58,6 +61,7 @@ namespace PostService
             });
 
             // 2. Add HybridCache (L1 in-memory + L2 Redis)
+#pragma warning disable EXTEXP0018 // HybridCache is experimental
             builder.Services.AddHybridCache(options =>
             {
                 options.DefaultEntryOptions = new HybridCacheEntryOptions
@@ -66,8 +70,8 @@ namespace PostService
                     Expiration = TimeSpan.FromMinutes(15)
                 };
                 options.MaximumPayloadBytes = 5 * 1024 * 1024; // 5MB max
-                options.MaximumKeyCount = 10000;
             });
+#pragma warning restore EXTEXP0018
 
             // 3. Register Redis connection for health checks (optional)
             builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
