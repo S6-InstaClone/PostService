@@ -1,9 +1,7 @@
 ﻿using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using PostService.Data;
+using PostService.Business;
 using PostService.Dtos;
 using PostService.Models;
 
@@ -13,18 +11,18 @@ namespace PostService.Controllers
     [ApiController]
     public class PostsController : ControllerBase
     {
-        private readonly PostRepository _context;
+        private readonly PostsService _postsService;
         private readonly BlobServiceClient _blobServiceClient;
         private readonly IConfiguration _config;
         private readonly ILogger<PostsController> _logger;
 
         public PostsController(
-            PostRepository context,
+            PostsService postsService,
             BlobServiceClient blobServiceClient,
             IConfiguration config,
             ILogger<PostsController> logger)
         {
-            _context = context;
+            _postsService = postsService;
             _blobServiceClient = blobServiceClient;
             _config = config;
             _logger = logger;
@@ -46,7 +44,7 @@ namespace PostService.Controllers
         private string? GetUsername()
         {
             var username = Request.Headers["X-User-Name"].FirstOrDefault();
-            _logger.LogDebug("X-User-Name header value: {Username}",  username);
+            _logger.LogDebug("X-User-Name header value: {Username}", username);
             return username;
         }
 
@@ -73,39 +71,36 @@ namespace PostService.Controllers
 
         // GET: api/posts
         // Public endpoint - no auth required
+        // NOW CACHED via PostsService
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Post>>> GetPosts()
+        public async Task<ActionResult<IEnumerable<Post>>> GetPosts(CancellationToken ct)
         {
-            return await _context.Posts
-                .OrderByDescending(p => p.CreatedAt)
-                .ToListAsync();
+            var posts = await _postsService.GetAllPostsAsync(page: 1, pageSize: 50, ct);
+            return Ok(posts);
         }
 
         // GET: api/posts/{id}
         // Public endpoint - no auth required
+        // NOW CACHED via PostsService
         [HttpGet("{id}")]
-        public async Task<ActionResult<Post>> GetPost(int id)
+        public async Task<ActionResult<Post>> GetPost(int id, CancellationToken ct)
         {
-            var post = await _context.Posts.FindAsync(id);
+            var post = await _postsService.GetPostByIdAsync(id, ct);
             if (post == null)
                 return NotFound();
-            return post;
+            return Ok(post);
         }
 
         // GET: api/posts/my-posts
         // Private endpoint - returns posts for the authenticated user
+        // NOW CACHED via PostsService
         [HttpGet("my-posts")]
-        public async Task<ActionResult<IEnumerable<Post>>> GetMyPosts()
+        public async Task<ActionResult<IEnumerable<Post>>> GetMyPosts(CancellationToken ct)
         {
             try
             {
                 var userId = GetRequiredUserId();
-
-                var posts = await _context.Posts
-                    .Where(p => p.UserId == userId)
-                    .OrderByDescending(p => p.CreatedAt)
-                    .ToListAsync();
-
+                var posts = await _postsService.GetPostsByUserAsync(userId, ct);
                 return Ok(posts);
             }
             catch (UnauthorizedAccessException)
@@ -116,9 +111,10 @@ namespace PostService.Controllers
 
         // POST: api/posts
         // Private endpoint - requires authentication
+        // Invalidates cache via PostsService
         [HttpPost]
         [Consumes("multipart/form-data")]
-        public async Task<ActionResult<Post>> CreatePost([FromForm] CreatePostDto dto)
+        public async Task<ActionResult<Post>> CreatePost([FromForm] CreatePostDto dto, CancellationToken ct)
         {
             try
             {
@@ -126,6 +122,7 @@ namespace PostService.Controllers
                 var username = GetUsername();
                 string? imageUrl = null;
 
+                // Handle image upload
                 if (dto.File != null && dto.File.Length > 0)
                 {
                     var container = GetContainer();
@@ -133,23 +130,20 @@ namespace PostService.Controllers
                     var blobClient = container.GetBlobClient(blobName);
 
                     using var stream = dto.File.OpenReadStream();
-                    await blobClient.UploadAsync(stream, overwrite: true);
+                    await blobClient.UploadAsync(stream, overwrite: true, ct);
                     imageUrl = blobClient.Uri.ToString();
                 }
 
-                var post = new Post
-                {
-                    UserId = userId,  // From gateway header, not from DTO
-                    Username = username,
-                    Caption = dto.Caption,
-                    ImageUrl = imageUrl,
-                    CreatedAt = DateTime.UtcNow
-                };
+                // Create post via service (handles caching)
+                var post = await _postsService.CreatePostAsync(
+                    userId,
+                    username,
+                    dto.Caption,
+                    imageUrl,
+                    ct);
 
-                _context.Posts.Add(post);
-                await _context.SaveChangesAsync();
-
-                _logger.LogInformation("Post {PostId} created by user {UserId} ({Username})", post.Id, userId, username);
+                _logger.LogInformation("Post {PostId} created by user {UserId} ({Username})",
+                    post.Id, userId, username);
 
                 return CreatedAtAction(nameof(GetPost), new { id = post.Id }, post);
             }
@@ -161,41 +155,44 @@ namespace PostService.Controllers
 
         // PUT: api/posts/{id}
         // Private endpoint - requires authentication AND ownership
+        // Invalidates cache via PostsService
         [HttpPut("{id}")]
         [Consumes("multipart/form-data")]
-        public async Task<IActionResult> UpdatePost(int id, [FromForm] UpdatePostDto dto)
+        public async Task<IActionResult> UpdatePost(int id, [FromForm] UpdatePostDto dto, CancellationToken ct)
         {
             try
             {
                 var userId = GetRequiredUserId();
 
-                var post = await _context.Posts.FindAsync(id);
-                if (post == null)
+                // Get post for ownership check and old image URL
+                var existingPost = await _postsService.GetPostForWriteAsync(id, ct);
+                if (existingPost == null)
                     return NotFound(new { message = "Post not found" });
 
-                // AUTHORIZATION: Check if user owns this post
-                if (post.UserId != userId)
+                // Check ownership
+                if (existingPost.UserId != userId)
                 {
                     _logger.LogWarning("User {UserId} attempted to update post {PostId} owned by {OwnerId}",
-                        userId, id, post.UserId);
-                    return Forbid(); // 403 Forbidden
+                        userId, id, existingPost.UserId);
+                    return Forbid();
                 }
 
-                post.Caption = dto.Caption;
+                string? newImageUrl = existingPost.ImageUrl;
 
+                // Handle image upload if provided
                 if (dto.File != null && dto.File.Length > 0)
                 {
                     var container = GetContainer();
 
                     // Delete old image if exists
-                    if (!string.IsNullOrEmpty(post.ImageUrl))
+                    if (!string.IsNullOrEmpty(existingPost.ImageUrl))
                     {
                         try
                         {
-                            var uri = new Uri(post.ImageUrl);
-                            var oldBlobName = string.Join("/", uri.Segments.Skip(2)); // Skip container name
+                            var uri = new Uri(existingPost.ImageUrl);
+                            var oldBlobName = string.Join("/", uri.Segments.Skip(2));
                             var oldBlobClient = container.GetBlobClient(oldBlobName);
-                            await oldBlobClient.DeleteIfExistsAsync();
+                            await oldBlobClient.DeleteIfExistsAsync(cancellationToken: ct);
                         }
                         catch (Exception ex)
                         {
@@ -208,16 +205,22 @@ namespace PostService.Controllers
                     var newBlobClient = container.GetBlobClient(newBlobName);
 
                     using var stream = dto.File.OpenReadStream();
-                    await newBlobClient.UploadAsync(stream, overwrite: true);
-
-                    post.ImageUrl = newBlobClient.Uri.ToString();
+                    await newBlobClient.UploadAsync(stream, overwrite: true, ct);
+                    newImageUrl = newBlobClient.Uri.ToString();
                 }
 
-                _context.Entry(post).State = EntityState.Modified;
-                await _context.SaveChangesAsync();
+                // Update via service (handles caching)
+                var updatedPost = await _postsService.UpdatePostAsync(
+                    id,
+                    userId,
+                    dto.Caption,
+                    newImageUrl,
+                    ct);
+
+                if (updatedPost == null)
+                    return NotFound(new { message = "Post not found or access denied" });
 
                 _logger.LogInformation("Post {PostId} updated by user {UserId}", id, userId);
-
                 return NoContent();
             }
             catch (UnauthorizedAccessException)
@@ -228,35 +231,30 @@ namespace PostService.Controllers
 
         // DELETE: api/posts/{id}
         // Private endpoint - requires authentication AND ownership
+        // Invalidates cache via PostsService
         [HttpDelete("{id}")]
-        public async Task<IActionResult> DeletePost(int id)
+        public async Task<IActionResult> DeletePost(int id, CancellationToken ct)
         {
             try
             {
                 var userId = GetRequiredUserId();
 
-                var post = await _context.Posts.FindAsync(id);
-                if (post == null)
-                    return NotFound(new { message = "Post not found" });
+                // Delete via service (handles caching and ownership check)
+                var deletedPost = await _postsService.DeletePostAsync(id, userId, ct);
 
-                // AUTHORIZATION: Check if user owns this post
-                if (post.UserId != userId)
-                {
-                    _logger.LogWarning("User {UserId} attempted to delete post {PostId} owned by {OwnerId}",
-                        userId, id, post.UserId);
-                    return Forbid(); // 403 Forbidden
-                }
+                if (deletedPost == null)
+                    return NotFound(new { message = "Post not found or access denied" });
 
-                // Delete image if exists
-                if (!string.IsNullOrEmpty(post.ImageUrl))
+                // Clean up blob storage
+                if (!string.IsNullOrEmpty(deletedPost.ImageUrl))
                 {
                     try
                     {
                         var container = GetContainer();
-                        var uri = new Uri(post.ImageUrl);
+                        var uri = new Uri(deletedPost.ImageUrl);
                         var blobName = string.Join("/", uri.Segments.Skip(2));
                         var blobClient = container.GetBlobClient(blobName);
-                        await blobClient.DeleteIfExistsAsync();
+                        await blobClient.DeleteIfExistsAsync(cancellationToken: ct);
                     }
                     catch (Exception ex)
                     {
@@ -264,11 +262,7 @@ namespace PostService.Controllers
                     }
                 }
 
-                _context.Posts.Remove(post);
-                await _context.SaveChangesAsync();
-
                 _logger.LogInformation("Post {PostId} deleted by user {UserId}", id, userId);
-
                 return NoContent();
             }
             catch (UnauthorizedAccessException)
