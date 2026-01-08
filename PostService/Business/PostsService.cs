@@ -3,99 +3,84 @@ using PostService.Dtos;
 using PostService.Models;
 using Microsoft.EntityFrameworkCore;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Caching.Hybrid;
+using PostService.Caching;
 
 namespace PostService.Business
 {
     public class PostsService
     {
-        private PostRepository _dbContext;
+        private readonly PostRepository _repository;
+        private readonly HybridCache _cache;
+        private readonly ILogger<PostsService> _logger;
 
-        public PostsService(PostRepository dbContext)
+        public PostsService(
+            PostRepository repository,
+            HybridCache cache,
+            ILogger<PostsService> logger)
         {
-            _dbContext = dbContext;
+            _repository = repository;
+            _cache = cache;
+            _logger = logger;
         }
-        //public async Task<int> CreatePost(CreatePostDto newPost)
-        //{
-        //    //TODO: CHeck formatting and null
-        //    var prof = new Profile(newProfile.Username, newProfile.Name, newProfile.Description);
-        //    _dbContext.Profile.Add(prof);
-        //    await _dbContext.SaveChangesAsync();
-        //    return prof.Id;
-        //}
-        //public async Task<bool> UpdateProfileName(UpdateProfileNameDto dto)
-        //{
-        //    var profile = await _dbContext.Profile.FindAsync(dto.Id);
 
-        //    if (profile == null)
-        //    {
-        //        throw new Exception("Profile not found.");
-        //    }
+        public async Task<Post?> GetPostByIdAsync(int id, CancellationToken ct = default)
+        {
+            var cacheKey = CacheKeys.Post(id);
 
-        //    profile.Name = dto.Name;
+            return await _cache.GetOrCreateAsync(
+                cacheKey,
+                async cancel =>
+                {
+                    _logger.LogDebug("Cache miss for post {PostId}", id);
+                    return await _repository.Posts
+                        .AsNoTracking()
+                        .FirstOrDefaultAsync(p => p.Id == id, cancel);
+                },
+                CacheOptions.PostCache,
+                cancellationToken: ct
+            );
+        }
 
-        //    _dbContext.Profile.Update(profile);
-        //    await _dbContext.SaveChangesAsync();
-        //    return true;
-        //}
-        //public async Task<bool> UpdateProfileDescription(UpdateProfileDescDto dto)
-        //{
-        //    var profile = await _dbContext.Profile.FindAsync(dto.Id);
+        public async Task<Post> CreatePostAsync(CreatePostDto dto, string odId)
+        {
+            var post = new Post
+            {
+                OdId = odId,
+                ImageUrl = dto.ImageUrl,
+                Caption = dto.Caption,
+                CreatedAt = DateTime.UtcNow
+            };
 
-        //    if (profile == null)
-        //    {
-        //        throw new Exception("Profile not found.");
-        //    }
+            _repository.Posts.Add(post);
+            await _repository.SaveChangesAsync();
 
-        //    profile.Description = dto.Description;
+            // Invalidate user's posts cache
+            await _cache.RemoveAsync(CacheKeys.PostsByUser(odId));
 
-        //    _dbContext.Profile.Update(profile);
-        //    await _dbContext.SaveChangesAsync();
-        //    return true;
-        //}
-        //public async Task UpdateProfilePicture(int id,string url)
-        //{
-        //    var profile = await _dbContext.Profile.FindAsync(id);
+            // Invalidate feed cache (first few pages)
+            for (int page = 1; page <= 3; page++)
+            {
+                await _cache.RemoveAsync(CacheKeys.Feed(page));
+            }
 
-        //    profile.ProfilePictureLink = url;
-        //    await _dbContext.SaveChangesAsync();
-        //}
-        //public IEnumerable<Profile> SearchForAProfile(string username)
-        //{
-        //    if (string.IsNullOrEmpty(username))
-        //    {
-        //        throw new ArgumentNullException("username");
-        //    }
-        //    var profileResults = _dbContext.Profile.Where(p => p.Username.Contains(username)).ToList();
-        //    return profileResults;
-        //}
+            _logger.LogInformation("Created post {PostId}, invalidated caches", post.Id);
+            return post;
+        }
 
-        //public async Task<int> DeleteProfile(int id)
-        //{
-        //    var profile = await _dbContext.Profile.FindAsync(id);
+        public async Task<bool> DeletePostAsync(int id, string odId)
+        {
+            var post = await _repository.Posts.FindAsync(id);
+            if (post == null || post.OdId != odId) return false;
 
-        //    if (profile == null)
-        //    {
-        //        throw new Exception("Profile not found.");
-        //    }
+            _repository.Posts.Remove(post);
+            await _repository.SaveChangesAsync();
 
-        //    _dbContext.Profile.Remove(profile);
-        //    await _dbContext.SaveChangesAsync();
-        //    return id;
-        //}
+            // Invalidate caches
+            await _cache.RemoveAsync(CacheKeys.Post(id));
+            await _cache.RemoveAsync(CacheKeys.PostsByUser(odId));
 
-        //internal object GetPost(string username)
-        //{
-        //    throw new NotImplementedException();
-        //}
-
-        //internal async Task<bool> UpdatePost(UpdatePostDto dto)
-        //{
-        //    throw new NotImplementedException();
-        //}
-
-        //internal async Task DeletePost(int id)
-        //{
-        //    throw new NotImplementedException();
-        //}
+            return true;
+        }
     }
 }

@@ -8,7 +8,9 @@ using PostService.Business;
 using PostService.Consumers;
 using PostService.Data;
 using PostService.Persistence;
-
+using Microsoft.Extensions.Caching.Hybrid;
+using Microsoft.Extensions.Caching.StackExchangeRedis;
+using StackExchange.Redis;
 namespace PostService
 {
     public class Program
@@ -44,6 +46,36 @@ namespace PostService
 
             builder.Services.AddDbContext<PostRepository>(options =>
                 options.UseNpgsql(connectionString));
+
+            var redisConnectionString = builder.Configuration.GetConnectionString("Redis")
+                ?? "localhost:6379,abortConnect=false";
+
+            // 1. Add Redis as distributed cache (L2)
+            builder.Services.AddStackExchangeRedisCache(options =>
+            {
+                options.Configuration = redisConnectionString;
+                options.InstanceName = "InstaClone:PostService:";
+            });
+
+            // 2. Add HybridCache (L1 in-memory + L2 Redis)
+            builder.Services.AddHybridCache(options =>
+            {
+                options.DefaultEntryOptions = new HybridCacheEntryOptions
+                {
+                    LocalCacheExpiration = TimeSpan.FromMinutes(2),
+                    Expiration = TimeSpan.FromMinutes(15)
+                };
+                options.MaximumPayloadBytes = 5 * 1024 * 1024; // 5MB max
+                options.MaximumKeyCount = 10000;
+            });
+
+            // 3. Register Redis connection for health checks (optional)
+            builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
+            {
+                var config = ConfigurationOptions.Parse(redisConnectionString);
+                config.AbortOnConnectFail = false;
+                return ConnectionMultiplexer.Connect(config);
+            });
 
             // Azure Blob Storage from environment variable
             var blobConnectionString = Environment.GetEnvironmentVariable("BLOB_CONNECTION_STRING")
